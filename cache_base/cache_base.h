@@ -39,6 +39,11 @@ public:
 
   ///////////////////////////////////////////////////////////////////
   // TODO: Maintain the LRU stack for this set
+    std::list<addr_t> LRU_queue; // queue of set indexes ** FRONT IS MOST RECENT **
+    bool full();
+    void LRU_update(addr_t idx);
+    addr_t evict(); // evict and return evicted address
+    addr_t find(addr_t tag); // returns idx if tag matches and valid, if no hit return -1, evict and replace if not hit
   ///////////////////////////////////////////////////////////////////
 };
 
@@ -59,7 +64,7 @@ private:
   int m_num_sets;         // number of sets
   int m_line_size;        // cache line size
 
-  cache_set_c **m_set;    // cache data structure
+  cache_set_c **m_set;    // cache data structure, accessed by m_set[set_num]->m_entry[entry_num].m_valid
 
   // cache statistics
   int m_num_accesses; 

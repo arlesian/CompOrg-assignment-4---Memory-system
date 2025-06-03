@@ -24,11 +24,44 @@
 cache_set_c::cache_set_c(int assoc) {
   m_entry = new cache_entry_c[assoc];
   m_assoc = assoc;
-}
+  LRU_queue.clear();
+  for (int i = 0; i < m_assoc; ++i) LRU_queue.push_front(i);
+} // need LRU_stack initialization logic
 
 // cache_set_c destructor
 cache_set_c::~cache_set_c() {
   delete[] m_entry;
+}
+
+// I MADE THIS!!!
+bool cache_set_c::full() {
+  return LRU_queue.size() >= m_assoc;
+}
+
+// I MADE THIS!!!
+addr_t cache_set_c::find(addr_t tag){
+  for (int i = 0; i < m_assoc; ++i) {
+    if (( m_entry[i].m_tag == tag ) && m_entry[i].m_valid ){
+      return i;
+    }
+  }
+  return -1;
+}
+
+addr_t cache_set_c::evict(){
+  for (int i = 0; i < m_assoc; ++i){
+    if (m_entry[i].m_valid == false) return i;
+  }
+
+  // if no invalid slots, return the LRU val
+  addr_t returnVal = LRU_queue.back();
+  LRU_queue.pop_back();
+  return returnVal; 
+}
+
+void cache_set_c::LRU_update(addr_t idx){
+  LRU_queue.remove(idx);
+  LRU_queue.push_front(idx);
 }
 
 /**
@@ -52,7 +85,7 @@ cache_base_c::cache_base_c(std::string name, int num_sets, int assoc, int line_s
 
     // initialize tag/valid/dirty bits
     for (int jj = 0; jj < assoc; ++jj) {
-      m_set[ii]->m_entry[jj].m_valid = false;
+      m_set[ii]->m_entry[jj].m_valid = false; // ii'th set jjth entry
       m_set[ii]->m_entry[jj].m_dirty = false;
       m_set[ii]->m_entry[jj].m_tag   = 0;
     }
@@ -72,6 +105,13 @@ cache_base_c::~cache_base_c() {
   delete[] m_set;
 }
 
+//////////////////
+// NOTE TO SELF //
+//////////////////
+// cache_set has an array of cache_entries(an array of cache_entry* s precisely)
+// cache_base has an array of cache_sets(an array of cache_set* s precisely)
+// so all accessed by ->
+
 /** 
  * This function looks up in the cache for a memory reference.
  * This needs to update all the necessary meta-data (e.g., tag/valid/dirty) 
@@ -84,6 +124,99 @@ cache_base_c::~cache_base_c() {
 bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
   ////////////////////////////////////////////////////////////////////
   // TODO: Write the code to implement this function
+
+  // granulity, line, set bits in addr_t
+  addr_t line_G       = m_line_size;
+  addr_t set_line_G   = m_num_sets * line_G;
+
+  // address decoded
+  addr_t line_address = ( address % line_G );              // decide which byte to access
+  addr_t set_address  = ( address % set_line_G ) / line_G; // decide which set to index
+  addr_t tag_bits     = address / set_line_G;              // leftover is the tag bits
+
+  // current cache entry info
+  cache_set_c* current_set = m_set[set_address];
+  
+  // returns -1 on miss, set idx on hit
+  addr_t set_idx = current_set->find(tag_bits);
+
+  if (set_idx == -1){
+
+    addr_t evict_idx = current_set->evict(); // NEED TO TAKE CARE OF DIRTY!!!
+    cache_entry_c* evict_entry = ( current_set->m_entry + evict_idx );
+
+    if (evict_entry->m_dirty) m_num_writebacks++; // increment wb
+
+    switch (access_type)
+    {
+      case WRITE:
+        evict_entry->m_dirty = true; // if fill, not dirty, else dirty
+        break;
+
+      case READ:
+        evict_entry->m_dirty = false;
+        break;
+
+      case INST_FETCH:
+        evict_entry->m_dirty = false;
+        break;
+
+      default: // add something
+        evict_entry->m_tag = 0;
+        evict_entry->m_dirty = false;
+        evict_entry->m_valid = false;
+        break;
+    }
+    evict_entry->m_tag = tag_bits;
+    evict_entry->m_valid = true;
+
+    // update variables
+    m_num_misses++;
+    m_num_accesses++;
+    if (access_type == WRITE) m_num_writes++;
+
+    current_set->LRU_update(evict_idx);
+
+    return false;
+    
+  } else {
+
+    cache_entry_c* current_entry = ( current_set->m_entry + set_idx );
+
+    switch (access_type)
+    {
+      case WRITE:
+        current_entry->m_dirty = true;
+        break;
+
+      case READ: // do nothing
+        break;
+
+      case INST_FETCH: // do nothing
+        break;
+
+      default: // add something
+        current_entry->m_tag = 0;
+        current_entry->m_dirty = false;
+        current_entry->m_valid = false;
+        break;
+    }
+
+    m_num_hits++;
+    m_num_accesses++;
+    if (access_type == WRITE) m_num_writes++;
+
+    current_set->LRU_update(set_idx);
+
+    return true;
+
+  }
+
+  std::cerr << "not supposed to reach here" << std::endl;
+  assert(false);
+
+  return true;
+
   ////////////////////////////////////////////////////////////////////
 }
 
