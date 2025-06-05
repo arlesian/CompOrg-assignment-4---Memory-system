@@ -15,7 +15,7 @@
 #include <functional>
 
 // forward declaration
-class simple_mem_c;
+class simple_mem_c; 
 class memory_hierarchy_c;
 
 

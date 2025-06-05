@@ -77,6 +77,7 @@ void cache_c::configure_neighbors(cache_c* prev_i, cache_c* prev_d, cache_c* nex
  *
  */
 bool cache_c::fill(mem_req_s* req) {
+  m_fill_queue->push(req);
 }
 
 /**
@@ -88,6 +89,9 @@ bool cache_c::fill(mem_req_s* req) {
  * a new ready cycle needs to be set for the request .
  */
 bool cache_c::access(mem_req_s* req) { 
+  req->m_rdy_cycle = m_cycle + m_latency;
+  m_in_queue->push(req);
+  return true; // temporary
 }
 
 /** 
@@ -99,6 +103,33 @@ bool cache_c::access(mem_req_s* req) {
  * 4. on a cache miss, put the current requests into out_queue
  */
 void cache_c::process_in_queue() {
+
+  std::vector<mem_req_s*> ready;
+  
+  for (auto* req : m_in_queue->m_entry) 
+  {
+    if (req->m_rdy_cycle <= m_cycle)
+      ready.push_back(req);
+  }
+
+  for (auto* current_req : ready)
+  {
+    m_in_queue->pop(current_req);
+
+    // maybe need to explicitly evict?
+    bool hit = cache_base_c::access(current_req->m_addr, current_req->m_type, false);
+
+    if (hit)
+    {
+      if (m_prev_d) m_prev_d->fill(current_req); // not yet changed to fill type
+      else m_memory->done_func(current_req); // NEED TO USE DONE FUNC HERE?? or just push_done_queue?
+    }
+    else 
+    {
+      m_out_queue->push(current_req);
+    }
+
+  }
 } 
 
 /** 
@@ -107,6 +138,22 @@ void cache_c::process_in_queue() {
  * CURRENT: There is no limit on the number of requests we can process in a cycle.
  */
 void cache_c::process_out_queue() {
+  
+  while (!m_out_queue->empty())
+  {
+
+    mem_req_s* current_req = m_out_queue->m_entry.back();
+    m_out_queue->pop(current_req);
+
+    if (m_next)
+    {
+      m_next->access(current_req);
+    } 
+    else 
+    {
+      m_memory->access(current_req);
+    }
+  }
 }
 
 
@@ -116,6 +163,33 @@ void cache_c::process_out_queue() {
  */
 
 void cache_c::process_fill_queue() {
+
+  std::vector<mem_req_s*> ready;
+
+  for (auto* req : m_fill_queue->m_entry) {
+    if (req->m_rdy_cycle <= m_cycle)
+      ready.push_back(req);
+  }
+
+  for (auto* current_req : ready)
+  {
+    m_fill_queue->pop(current_req);
+  
+  if (current_req->m_type == MEM_REQ_TYPE::REQ_WB)
+  {
+    ////////////////////////////////////////////////////////////////
+    // IS THIS CORRECT? NEEDS CONFIRMATION
+    ////////////////////////////////////////////////////////////////
+    m_wb_queue->push(current_req);
+  }
+  else // not wb, just fill
+  {
+    cache_base_c::access(current_req->m_addr, request_type::WRITE, true); // fill type
+
+    if (m_prev_d) m_prev_d->fill(current_req);
+    else m_memory->done_func(current_req); // MAY NEED TO USE DONE FUNC!!
+  }
+  }
 }
 
 /** 
@@ -124,6 +198,17 @@ void cache_c::process_fill_queue() {
  * CURRENT: There is no limit on the number of requests we can process in a cycle.
  */
 void cache_c::process_wb_queue() {
+    while (!m_wb_queue->empty()) {
+    mem_req_s* req = m_wb_queue->m_entry.back();
+    m_wb_queue->pop(req);
+    
+    m_num_writebacks_backinval += 1;
+
+    if (m_next)
+      m_next->fill(req);
+    else
+      m_memory->access(req);
+  }
 }
 
 /**

@@ -24,7 +24,7 @@ memory_hierarchy_c::memory_hierarchy_c(config_c& config) {
 
   m_l1u_cache = nullptr;
   m_l1i_cache = nullptr;                     
-  m_l1d_cache = nullptr;                     
+  m_l1d_cache = nullptr;                      
   m_l2_cache = nullptr;                     
   m_dram = nullptr;                     
 
@@ -39,6 +39,18 @@ memory_hierarchy_c::memory_hierarchy_c(config_c& config) {
   } 
 }
 
+//////////////////////////////////////////////////////////////////////
+// NOTE TO SELF:
+// basic structure is as follows:
+// core puts reqs into in_flight_req, then call m_mm access
+// m_mm access sends the reqs into caches (or dram) (via access calls)
+// do run a cycle which runs a cycle for caches and dram
+// then push_done req is done from outside(?), which deletes in_flight reqs
+// then call preoccess done reqs which removes reqs from done_queue and frees mem
+// increment counter and one cycle is completed
+//////////////////////////////////////////////////////////////////////
+
+
 /**
  * This initializes the memory hierarchy to simulate with a given configuration.
  */
@@ -47,13 +59,19 @@ void memory_hierarchy_c::init(config_c& config) {
   // TODO: Write the code to implement this function
   // 1. Instantiate caches and main memory (e.g., DRAM)
   // 2. Configure neighbors of each cache
+  if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
+    int set_num = config.get_l1d_size() / ( config.get_l1d_assoc() * config.get_l1d_line_size() );
+    m_l1u_cache = new cache_c("Unified L1 cache", 1, set_num, config.get_l1d_assoc(), config.get_l1d_line_size(), config.get_l1d_latency());
+    m_dram->configure_neighbors(m_l1u_cache);
+    m_l1u_cache->configure_neighbors(nullptr, nullptr, nullptr, m_dram);
+  }
   ////////////////////////////////////////////////////////////////////
   
   // instantiate caches and main memory (e.g., DRAM)
   m_dram = new simple_mem_c("DRAM", MEM_MC, config.get_memory_latency());
 
   if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
-    m_dram->configure_neighbors(nullptr);
+    m_dram->configure_neighbors(nullptr); // set previous hierarchy to nullptr
   }
 }
 
@@ -72,6 +90,11 @@ bool memory_hierarchy_c::access(addr_t address, int access_type) {
   ////////////////////////////////////////////////////////////////////
   // TODO: Write the code to implement this function
   // Access the top-level memory component
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)){
+    for (int i = 0; i < m_in_flight_reqs.size(); ++i) m_dram->access(m_in_flight_reqs[i]); // pop everything in the m_in_flight_reqs then access
+  } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
+    for (int i = 0; i < m_in_flight_reqs.size(); ++i) m_l1u_cache->access(m_in_flight_reqs[i]);
+  }
   ////////////////////////////////////////////////////////////////////
 }
 
@@ -116,6 +139,9 @@ void memory_hierarchy_c::run_a_cycle() {
   // 1. Tick a acycle for each cache/memory component
   // Think carefully what should be the order of run_a_cycle
   // 2. Process done requests.
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
+    m_l1u_cache->run_a_cycle();
+  }
   ////////////////////////////////////////////////////////////////////
  
   m_dram->run_a_cycle();
@@ -134,6 +160,11 @@ void memory_hierarchy_c::process_done_req() {
   ////////////////////////////////////////////////////////////////////
   // TODO: Write the code to implement this function
   // Free done requests
+  while (!m_done_queue->empty()) {
+    mem_req_s* current_req = m_done_queue->m_entry.back();
+    free_mem_req(current_req);
+    m_done_queue->m_entry.pop_back();
+  }
   ////////////////////////////////////////////////////////////////////
   
 }
@@ -156,6 +187,14 @@ bool memory_hierarchy_c::is_wb_done() {
   // TODO: Write the code to implement this function
   // If there is no in-flight writeback requests for all the caches and
   // main memory, return true.
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)){
+    return m_dram->m_in_flight_wb_queue->empty();  
+  } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
+    return m_dram->m_in_flight_wb_queue->empty() && m_l1u_cache->m_in_flight_wb_queue->empty();
+  }
+  std::cerr << "this point is not to be reached" << std::endl;
+  assert(false);
+  return false;
   ////////////////////////////////////////////////////////////////////
 
 }

@@ -42,6 +42,7 @@ public:
     std::list<addr_t> LRU_queue; // queue of set indexes ** FRONT IS MOST RECENT **
     bool full();
     void LRU_update(addr_t idx);
+    bool need_to_evict();
     addr_t evict(); // evict and return evicted address
     addr_t find(addr_t tag); // returns idx if tag matches and valid, if no hit return -1, evict and replace if not hit
   ///////////////////////////////////////////////////////////////////
@@ -56,6 +57,7 @@ public:
   ~cache_base_c();
 
   bool access(addr_t address, int access_type, bool is_fill);
+  bool need_to_evict(addr_t address, int access_type, bool is_fill);
   void print_stats();
   void dump_tag_store(bool is_file);  // false: dump to stdout, true: dump to a file
 

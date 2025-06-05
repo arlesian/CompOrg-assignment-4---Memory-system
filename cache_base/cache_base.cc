@@ -38,6 +38,14 @@ bool cache_set_c::full() {
   return LRU_queue.size() >= m_assoc;
 }
 
+// I MADE THIS FOR PART II
+bool cache_set_c::need_to_evict(){
+  for (int i = 0; i < m_assoc; ++i){
+    if (m_entry[i].m_valid == false) return false;
+  }
+  return true;
+}
+
 // I MADE THIS!!!
 addr_t cache_set_c::find(addr_t tag){
   for (int i = 0; i < m_assoc; ++i) {
@@ -99,6 +107,8 @@ cache_base_c::cache_base_c(std::string name, int num_sets, int assoc, int line_s
   m_num_writebacks = 0;
 }
 
+
+
 // cache_base_c destructor
 cache_base_c::~cache_base_c() {
   for (int ii = 0; ii < m_num_sets; ++ii) { delete m_set[ii]; }
@@ -111,6 +121,7 @@ cache_base_c::~cache_base_c() {
 // cache_set has an array of cache_entries(an array of cache_entry* s precisely)
 // cache_base has an array of cache_sets(an array of cache_set* s precisely)
 // so all accessed by ->
+
 
 /** 
  * This function looks up in the cache for a memory reference.
@@ -218,6 +229,22 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
   return true;
 
   ////////////////////////////////////////////////////////////////////
+}
+
+bool cache_base_c::need_to_evict(addr_t address, int access_type, bool is_fill){
+    // granulity, line, set bits in addr_t
+  addr_t line_G       = m_line_size;
+  addr_t set_line_G   = m_num_sets * line_G;
+
+  // address decoded
+  addr_t line_address = ( address % line_G );              // decide which byte to access
+  addr_t set_address  = ( address % set_line_G ) / line_G; // decide which set to index
+  addr_t tag_bits     = address / set_line_G;              // leftover is the tag bits
+
+  // current cache entry info
+  cache_set_c* current_set = m_set[set_address];
+
+  return current_set->need_to_evict();
 }
 
 /**
