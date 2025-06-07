@@ -31,6 +31,8 @@ public:
   
   void print_stats(void);
 
+  void set_mm(memory_hierarchy_c* mm) {m_mm = mm;};
+
   // callback for done requests
 public:
   using callback_t = std::function<void(mem_req_s*)>;

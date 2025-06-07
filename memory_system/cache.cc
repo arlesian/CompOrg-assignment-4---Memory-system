@@ -77,7 +77,9 @@ void cache_c::configure_neighbors(cache_c* prev_i, cache_c* prev_d, cache_c* nex
  *
  */
 bool cache_c::fill(mem_req_s* req) {
+  req->m_rdy_cycle = m_cycle + m_latency;
   m_fill_queue->push(req);
+  return true;
 }
 
 /**
@@ -117,17 +119,30 @@ void cache_c::process_in_queue() {
     m_in_queue->pop(current_req);
 
     // maybe need to explicitly evict?
+
+    if (current_req->m_type == REQ_WB){
+      m_out_queue->push(current_req);
+    }
+    else {
+    // wb is already executed in the cache base
+
+    // bool wb = cache_base_c::need_to_evict_and_dirty(current_req->m_addr, current_req->m_type, false);
+    // addr_t evict_addr = cache_base_c::evict_addr(current_req->m_addr);
     bool hit = cache_base_c::access(current_req->m_addr, current_req->m_type, false);
 
     if (hit)
     {
-      if (m_prev_d) m_prev_d->fill(current_req); // not yet changed to fill type
-      else m_memory->done_func(current_req); // NEED TO USE DONE FUNC HERE?? or just push_done_queue?
+
+      m_mm->push_done_req(current_req); // not yet changed to fill type
+      // else m_mm->push_done_req(current_req); // NEED TO USE DONE FUNC HERE?? or just push_done_queue?
+      // dont know if we need to update done cycle here or auto done in m_mm
+      
     }
     else 
     {
       m_out_queue->push(current_req);
     }
+  }
 
   }
 } 
@@ -147,11 +162,12 @@ void cache_c::process_out_queue() {
 
     if (m_next)
     {
-      m_next->access(current_req);
+      // if (current_req->m_type == MEM_REQ_TYPE::REQ_WB) m_next->m_wb_queue->push(current_req);
+     m_next->access(current_req);
     } 
     else 
     {
-      m_memory->access(current_req);
+      m_memory->access(current_req); // sending to dram
     }
   }
 }
@@ -171,26 +187,34 @@ void cache_c::process_fill_queue() {
       ready.push_back(req);
   }
 
-  for (auto* current_req : ready)
-  {
-    m_fill_queue->pop(current_req);
-  
-  if (current_req->m_type == MEM_REQ_TYPE::REQ_WB)
-  {
-    ////////////////////////////////////////////////////////////////
-    // IS THIS CORRECT? NEEDS CONFIRMATION
-    ////////////////////////////////////////////////////////////////
-    m_wb_queue->push(current_req);
-  }
-  else // not wb, just fill
-  {
-    cache_base_c::access(current_req->m_addr, request_type::WRITE, true); // fill type
 
-    if (m_prev_d) m_prev_d->fill(current_req);
-    else m_memory->done_func(current_req); // MAY NEED TO USE DONE FUNC!!
+  for (auto* current_req : ready)
+  {    
+    
+    // std::cerr << "right out of ready" << std::endl;
+    // assert(current_req);
+    
+    m_fill_queue->pop(current_req);
+    // std::cerr << "pop deletes req?" << std::endl;
+    // assert(current_req);
+    if (current_req->m_type == REQ_WB){
+      m_mm->push_done_req(current_req);
+    }
+    else {
+  
+    cache_base_c::access(current_req->m_addr, current_req->m_type, true); // fill type
+    // DONT COUNT THIS IN CACHE_BASE!!!
+
+    m_mm->push_done_req(current_req);
+    // else {
+    //   m_mm->push_done_req(current_req); // MAY NEED TO USE DONE FUNC!!
+    // }
+  // }
+    }
   }
-  }
+
 }
+
 
 /** 
  * This function processes the write-back queue.
@@ -199,15 +223,16 @@ void cache_c::process_fill_queue() {
  */
 void cache_c::process_wb_queue() {
     while (!m_wb_queue->empty()) {
-    mem_req_s* req = m_wb_queue->m_entry.back();
-    m_wb_queue->pop(req);
-    
-    m_num_writebacks_backinval += 1;
+      mem_req_s* req = m_wb_queue->m_entry.back();
+      m_wb_queue->pop(req);
+      // m_num_writebacks_backinval += 1;
+      m_out_queue->push(req);
+  }
+  while (!m_in_flight_wb_queue->empty()){
+    mem_req_s* req = m_in_flight_wb_queue->m_entry.back();
+    m_in_flight_wb_queue->pop(req);
 
-    if (m_next)
-      m_next->fill(req);
-    else
-      m_memory->access(req);
+    m_out_queue->push(req);
   }
 }
 

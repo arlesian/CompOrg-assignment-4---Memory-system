@@ -59,19 +59,24 @@ void memory_hierarchy_c::init(config_c& config) {
   // TODO: Write the code to implement this function
   // 1. Instantiate caches and main memory (e.g., DRAM)
   // 2. Configure neighbors of each cache
-  if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
-    int set_num = config.get_l1d_size() / ( config.get_l1d_assoc() * config.get_l1d_line_size() );
-    m_l1u_cache = new cache_c("Unified L1 cache", 1, set_num, config.get_l1d_assoc(), config.get_l1d_line_size(), config.get_l1d_latency());
-    m_dram->configure_neighbors(m_l1u_cache);
-    m_l1u_cache->configure_neighbors(nullptr, nullptr, nullptr, m_dram);
-  }
-  ////////////////////////////////////////////////////////////////////
-  
+
   // instantiate caches and main memory (e.g., DRAM)
   m_dram = new simple_mem_c("DRAM", MEM_MC, config.get_memory_latency());
 
+  if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
+    int num_sets = config.get_l1d_size() / (config.get_l1d_line_size() * config.get_l1d_assoc());
+
+    m_l1u_cache = new cache_c("L1U", 1, num_sets, config.get_l1d_assoc(), config.get_l1d_line_size(), config.get_l1d_latency());
+
+    m_l1u_cache->configure_neighbors(nullptr, nullptr, nullptr, m_dram);
+    m_l1u_cache->set_mm(this); 
+    m_dram->configure_neighbors(m_l1u_cache);
+
+    m_dram->set_done_func(std::bind(&memory_hierarchy_c::push_done_req, this, std::placeholders::_1));
+  }
+
   if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
-    m_dram->configure_neighbors(nullptr); // set previous hierarchy to nullptr
+    m_dram->configure_neighbors(nullptr);
   }
 }
 
@@ -90,11 +95,14 @@ bool memory_hierarchy_c::access(addr_t address, int access_type) {
   ////////////////////////////////////////////////////////////////////
   // TODO: Write the code to implement this function
   // Access the top-level memory component
-  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)){
-    for (int i = 0; i < m_in_flight_reqs.size(); ++i) m_dram->access(m_in_flight_reqs[i]); // pop everything in the m_in_flight_reqs then access
-  } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
-    for (int i = 0; i < m_in_flight_reqs.size(); ++i) m_l1u_cache->access(m_in_flight_reqs[i]);
+
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
+    m_l1u_cache->access(req);
+  } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
+    m_dram->access(req);
   }
+
+  return true;
   ////////////////////////////////////////////////////////////////////
 }
 
@@ -139,9 +147,10 @@ void memory_hierarchy_c::run_a_cycle() {
   // 1. Tick a acycle for each cache/memory component
   // Think carefully what should be the order of run_a_cycle
   // 2. Process done requests.
-  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
     m_l1u_cache->run_a_cycle();
   }
+
   ////////////////////////////////////////////////////////////////////
  
   m_dram->run_a_cycle();
@@ -161,20 +170,23 @@ void memory_hierarchy_c::process_done_req() {
   // TODO: Write the code to implement this function
   // Free done requests
   while (!m_done_queue->empty()) {
-    mem_req_s* current_req = m_done_queue->m_entry.back();
-    free_mem_req(current_req);
-    m_done_queue->m_entry.pop_back();
+    mem_req_s* req = m_done_queue->m_entry.back();
+    m_done_queue->pop(req);
+
+    req->m_done_cycle = m_cycle;
+    free_mem_req(req);
   }
   ////////////////////////////////////////////////////////////////////
   
 }
 
-/**
+/*
  * This function is called when the request is done and data is ready to return to the core.
  * This is called Tfrom the top-level memory component.
  */
 void memory_hierarchy_c::push_done_req(mem_req_s* req) {
-  DEBUG("[MEM_H] Done REQ #%d %8lx @ %ld\n", req->m_id, req->m_addr, m_cycle);
+  // DEBUG("[MEM_H] Done REQ #%d %8lx @ %ld\n", req->m_id, req->m_addr, m_cycle);
+  
   m_done_queue->push(req);
 }
 
@@ -187,16 +199,18 @@ bool memory_hierarchy_c::is_wb_done() {
   // TODO: Write the code to implement this function
   // If there is no in-flight writeback requests for all the caches and
   // main memory, return true.
-  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)){
-    return m_dram->m_in_flight_wb_queue->empty();  
-  } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)){
-    return m_dram->m_in_flight_wb_queue->empty() && m_l1u_cache->m_in_flight_wb_queue->empty();
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
+    return m_dram->m_in_flight_wb_queue->empty() &&
+           m_l1u_cache->m_in_flight_wb_queue->empty();
   }
-  std::cerr << "this point is not to be reached" << std::endl;
-  assert(false);
+
+  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
+    return m_dram->m_in_flight_wb_queue->empty();
+  }
+
+  assert(false && "Unhandled hierarchy type in is_wb_done()");
   return false;
   ////////////////////////////////////////////////////////////////////
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

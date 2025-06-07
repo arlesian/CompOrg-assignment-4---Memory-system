@@ -33,18 +33,6 @@ cache_set_c::~cache_set_c() {
   delete[] m_entry;
 }
 
-// I MADE THIS!!!
-bool cache_set_c::full() {
-  return LRU_queue.size() >= m_assoc;
-}
-
-// I MADE THIS FOR PART II
-bool cache_set_c::need_to_evict(){
-  for (int i = 0; i < m_assoc; ++i){
-    if (m_entry[i].m_valid == false) return false;
-  }
-  return true;
-}
 
 // I MADE THIS!!!
 addr_t cache_set_c::find(addr_t tag){
@@ -63,7 +51,7 @@ addr_t cache_set_c::evict(){
 
   // if no invalid slots, return the LRU val
   addr_t returnVal = LRU_queue.back();
-  LRU_queue.pop_back();
+  // update is done in access
   return returnVal; 
 }
 
@@ -153,40 +141,27 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
 
   if (set_idx == -1){
 
+    // if (!is_fill){ // for Part II
+    m_num_accesses++;
+    m_num_misses++;
+    if (access_type == request_type::WRITE) m_num_writes++;
+    // }
+
     addr_t evict_idx = current_set->evict(); // NEED TO TAKE CARE OF DIRTY!!!
     cache_entry_c* evict_entry = ( current_set->m_entry + evict_idx );
 
-    if (evict_entry->m_dirty) m_num_writebacks++; // increment wb
-
-    switch (access_type)
-    {
-      case WRITE:
-        evict_entry->m_dirty = true; // if fill, not dirty, else dirty
-        break;
-
-      case READ:
-        evict_entry->m_dirty = false;
-        break;
-
-      case INST_FETCH:
-        evict_entry->m_dirty = false;
-        break;
-
-      default: // add something
-        evict_entry->m_tag = 0;
-        evict_entry->m_dirty = false;
-        evict_entry->m_valid = false;
-        break;
-    }
+    // this !is_fill is for Part II
+    if (evict_entry->m_dirty && evict_entry->m_valid /*&& !is_fill*/) m_num_writebacks++; 
+    // fill is already hit ( when evict, replaced with fill data tag )
+    
     evict_entry->m_tag = tag_bits;
     evict_entry->m_valid = true;
 
+    evict_entry->m_dirty = (access_type == request_type::WRITE /* && !is_fill*/ );
     // update variables
-    m_num_misses++;
-    m_num_accesses++;
-    if (access_type == WRITE) m_num_writes++;
 
-    current_set->LRU_update(evict_idx);
+    if (access_type != request_type::WB)
+      current_set->LRU_update(evict_idx); // dont update LRU for wb
 
     return false;
     
@@ -194,30 +169,17 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
 
     cache_entry_c* current_entry = ( current_set->m_entry + set_idx );
 
-    switch (access_type)
-    {
-      case WRITE:
-        current_entry->m_dirty = true;
-        break;
+    // if (!is_fill){ // for Part II
+      m_num_accesses++;
+      m_num_hits++;
+      if (access_type == request_type::WRITE) m_num_writes++;
+    // }
 
-      case READ: // do nothing
-        break;
+    if (access_type == request_type::WRITE) current_entry->m_dirty = true;
 
-      case INST_FETCH: // do nothing
-        break;
+    // WE FILED ANOTHER REQ FOR FILL AT THE PROCCESS_FILL so need not count again
 
-      default: // add something
-        current_entry->m_tag = 0;
-        current_entry->m_dirty = false;
-        current_entry->m_valid = false;
-        break;
-    }
-
-    m_num_hits++;
-    m_num_accesses++;
-    if (access_type == WRITE) m_num_writes++;
-
-    current_set->LRU_update(set_idx);
+    current_set->LRU_update(set_idx); // hit wb is write hit
 
     return true;
 
@@ -231,21 +193,7 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
   ////////////////////////////////////////////////////////////////////
 }
 
-bool cache_base_c::need_to_evict(addr_t address, int access_type, bool is_fill){
-    // granulity, line, set bits in addr_t
-  addr_t line_G       = m_line_size;
-  addr_t set_line_G   = m_num_sets * line_G;
 
-  // address decoded
-  addr_t line_address = ( address % line_G );              // decide which byte to access
-  addr_t set_address  = ( address % set_line_G ) / line_G; // decide which set to index
-  addr_t tag_bits     = address / set_line_G;              // leftover is the tag bits
-
-  // current cache entry info
-  cache_set_c* current_set = m_set[set_address];
-
-  return current_set->need_to_evict();
-}
 
 /**
  * Print statistics (DO NOT CHANGE)
