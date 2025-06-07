@@ -141,23 +141,23 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
 
   if (set_idx == -1){
 
-    // if (!is_fill){ // for Part II
+    if (!is_fill){ // for Part II
     m_num_accesses++;
     m_num_misses++;
     if (access_type == request_type::WRITE) m_num_writes++;
-    // }
+    }
 
     addr_t evict_idx = current_set->evict(); // NEED TO TAKE CARE OF DIRTY!!!
     cache_entry_c* evict_entry = ( current_set->m_entry + evict_idx );
 
     // this !is_fill is for Part II
-    if (evict_entry->m_dirty && evict_entry->m_valid /*&& !is_fill*/) m_num_writebacks++; 
+    if (evict_entry->m_dirty && evict_entry->m_valid && !is_fill) m_num_writebacks++; 
     // fill is already hit ( when evict, replaced with fill data tag )
     
     evict_entry->m_tag = tag_bits;
     evict_entry->m_valid = true;
 
-    evict_entry->m_dirty = (access_type == request_type::WRITE /* && !is_fill*/ );
+    evict_entry->m_dirty = (access_type == request_type::WRITE && !is_fill );
     // update variables
 
     if (access_type != request_type::WB)
@@ -169,11 +169,11 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
 
     cache_entry_c* current_entry = ( current_set->m_entry + set_idx );
 
-    // if (!is_fill){ // for Part II
+    if (!is_fill){ // for Part II
       m_num_accesses++;
       m_num_hits++;
       if (access_type == request_type::WRITE) m_num_writes++;
-    // }
+    }
 
     if (access_type == request_type::WRITE) current_entry->m_dirty = true;
 
