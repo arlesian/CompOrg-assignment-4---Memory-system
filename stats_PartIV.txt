@@ -8,37 +8,37 @@ Processed 700000 instructions
 ------------------------------
 Performance Stats
 ------------------------------
-CPI:  11.1934
-number of cycles: 8725454
+CPI:  1.28305
+number of cycles: 1000156
 number of insts: 779515
 number of memory insts: 220485
 ------------------------------
-L1I Hit Rate: 93.4004 % 
+L1I Hit Rate: 93.3838 % 
 ------------------------------
 number of accesses: 779515
-number of hits: 728070
-number of misses: 51445
+number of hits: 727941
+number of misses: 51574
 number of writes: 0
 number of writebacks: 0
 number of back invalidations: 0
 number of writebacks due to back invalidations: 0
 ------------------------------
-L1D Hit Rate: 88.2069 % 
+L1D Hit Rate: 88.1915 % 
 ------------------------------
 number of accesses: 220485
-number of hits: 194483
-number of misses: 26002
+number of hits: 194449
+number of misses: 26036
 number of writes: 80669
-number of writebacks: 8837
+number of writebacks: 8832
 number of back invalidations: 0
-number of writebacks due to back invalidations: 1212
+number of writebacks due to back invalidations: 1397
 ------------------------------
-L2 Hit Rate: 58.8364 % 
+L2 Hit Rate: 58.937 % 
 ------------------------------
-number of accesses: 77447
-number of hits: 45567
-number of misses: 31880
-number of writes: 5824
-number of writebacks: 2402
-number of back invalidations: 3937
+number of accesses: 77610
+number of hits: 45741
+number of misses: 31869
+number of writes: 5809
+number of writebacks: 2430
+number of back invalidations: 4254
 number of writebacks due to back invalidations: 0

@@ -68,6 +68,8 @@ public:
   addr_t get_evict_addr(addr_t address);
 
   /////////////////////////////////////////
+  // CHANGED FOR PART IV
+  int get_line_size() const { return m_line_size; }
 
 
 private:

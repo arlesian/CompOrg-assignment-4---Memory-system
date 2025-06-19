@@ -145,7 +145,21 @@ void cache_c::process_in_queue() {
     }
     else 
     {
-      m_out_queue->push(current_req);
+        // CHANGED FOR PART IV: avoid duplicate miss requests
+        bool already_pending = false;
+        for (auto* r : m_out_queue->m_entry) {
+          if ((r->m_addr / get_line_size()) == (current_req->m_addr / get_line_size())) {
+            already_pending = true;
+            break;
+          }
+        }
+
+        if (!already_pending) {
+          m_out_queue->push(current_req);
+        } else {
+          // CHANGED FOR PART IV: avoid over-requesting
+          delete current_req;
+        }
     }
   }
 
@@ -211,6 +225,7 @@ void cache_c::process_fill_queue() {
     // need to add check evicted line function
     // then do writeback depending whether evicted line is dirty or not
     ///////////////////////////////////////////////////
+    
     addr_t evict_addr = cache_base_c::get_evict_addr(current_req->m_addr);
     // std::cout << "evict addr check : " << evict_addr << std::endl;
     bool hit = cache_base_c::access(current_req->m_addr, current_req->m_type, true); // fill type
