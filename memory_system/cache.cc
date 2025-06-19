@@ -132,8 +132,13 @@ void cache_c::process_in_queue() {
 
     if (hit)
     {
-
-      m_mm->push_done_req(current_req); // not yet changed to fill type
+      if ( ((current_req->m_type == REQ_DFETCH) || (current_req->m_type == REQ_DSTORE) ) && (m_prev_d)){
+        m_prev_d->m_fill_queue->push(current_req);
+      } else if (current_req->m_type == REQ_IFETCH && m_prev_i){
+        m_prev_i->m_fill_queue->push(current_req);
+      } else {
+        m_mm->push_done_req(current_req); // not yet changed to fill type
+      }
       // else m_mm->push_done_req(current_req); // NEED TO USE DONE FUNC HERE?? or just push_done_queue?
       // dont know if we need to update done cycle here or auto done in m_mm
       
@@ -163,7 +168,8 @@ void cache_c::process_out_queue() {
     if (m_next)
     {
       // if (current_req->m_type == MEM_REQ_TYPE::REQ_WB) m_next->m_wb_queue->push(current_req);
-     m_next->access(current_req);
+     m_next->m_in_queue->push(current_req);
+    //  m_next->fill(current_req); // test
     } 
     else 
     {
@@ -201,9 +207,53 @@ void cache_c::process_fill_queue() {
       m_mm->push_done_req(current_req);
     }
     else {
-  
-    cache_base_c::access(current_req->m_addr, current_req->m_type, true); // fill type
+    ///////////////////////////////////////////////////
+    // need to add check evicted line function
+    // then do writeback depending whether evicted line is dirty or not
+    ///////////////////////////////////////////////////
+    addr_t evict_addr = cache_base_c::get_evict_addr(current_req->m_addr);
+    // std::cout << "evict addr check : " << evict_addr << std::endl;
+    bool hit = cache_base_c::access(current_req->m_addr, current_req->m_type, true); // fill type
     // DONT COUNT THIS IN CACHE_BASE!!!
+
+    // new code for multi level
+    // TODO
+    
+    // if (m_level == 2) std::cout << "level 2 cache, hit : " << hit << std::endl; 
+
+    if (m_level == 2 && evict_addr != static_cast<addr_t>(-1)) {
+      // std::cout << "inside backinval block of layer " << m_level << " cache" << std::endl;
+      // assert(false);
+      for (cache_c* l1 : {m_prev_i, m_prev_d}) {
+        if (l1 && l1->has_line(evict_addr)) {
+          m_num_backinvals++;
+          // std::cout << "backinval trig at addr" << std::endl;
+          // assert(false); // check if this line gets run
+          if (l1->is_dirty(evict_addr)) {
+            mem_req_s* wb_req = new mem_req_s(evict_addr, REQ_WB);
+            wb_req->m_rdy_cycle = m_cycle;
+            m_wb_queue->push(wb_req);
+            l1->m_num_writebacks_backinval++;
+            // assert(false); // check if this gets run
+          }
+          l1->erase_line(evict_addr);
+        }
+      }
+      // log for debugging
+      // std::cout << "[L2 fill] evicting line: " << evict_addr 
+      //     << " hit: " << hit 
+      //     << " present in L1I: " << (m_prev_i && m_prev_i->has_line(evict_addr)) 
+      //     << " present in L1D: " << (m_prev_d && m_prev_d->has_line(evict_addr)) 
+      //     << std::endl;
+
+    }
+    if (m_level == 1 && m_next) {
+      mem_req_s* l2_fill = new mem_req_s(current_req->m_addr, current_req->m_type);
+      l2_fill->m_rdy_cycle = m_cycle;
+      m_next->fill(l2_fill);
+    }
+
+    // new code for multi level
 
     m_mm->push_done_req(current_req);
     // else {

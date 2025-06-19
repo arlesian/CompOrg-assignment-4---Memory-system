@@ -193,6 +193,70 @@ bool cache_base_c::access(addr_t address, int access_type, bool is_fill) {
   ////////////////////////////////////////////////////////////////////
 }
 
+// new method for backinval
+// these do not update statistics!!
+/////////////////////////////////////
+bool cache_base_c::has_line(addr_t address) {
+  addr_t set_idx = (address % (m_num_sets * m_line_size)) / m_line_size;
+  addr_t tag = address / (m_num_sets * m_line_size);
+
+  cache_set_c* set = m_set[set_idx];
+  for (int i = 0; i < set->m_assoc; i++) {
+    if (set->m_entry[i].m_valid && set->m_entry[i].m_tag == tag)
+      return true;
+  }
+  return false;
+}
+
+bool cache_base_c::is_dirty(addr_t address) {
+  addr_t set_idx = (address % (m_num_sets * m_line_size)) / m_line_size;
+  addr_t tag = address / (m_num_sets * m_line_size);
+
+  cache_set_c* set = m_set[set_idx];
+  for (int i = 0; i < set->m_assoc; i++) {
+    if (set->m_entry[i].m_valid && set->m_entry[i].m_tag == tag)
+      return set->m_entry[i].m_dirty;
+  }
+  return false;
+}
+
+bool cache_base_c::erase_line(addr_t address) {
+  addr_t set_idx = (address % (m_num_sets * m_line_size)) / m_line_size;
+  addr_t tag = address / (m_num_sets * m_line_size);
+
+  cache_set_c* set = m_set[set_idx];
+  for (int i = 0; i < set->m_assoc; i++) {
+    if (set->m_entry[i].m_valid && set->m_entry[i].m_tag == tag) {
+      set->m_entry[i].m_valid = false;
+      return true;
+    }
+  }
+  return false;
+}
+
+addr_t cache_base_c::get_evict_addr(addr_t address) {
+  addr_t line_G       = m_line_size;
+  addr_t set_line_G   = m_num_sets * line_G;
+
+  addr_t set_address  = (address % set_line_G) / line_G;
+  addr_t tag_bits     = address / set_line_G;
+
+  cache_set_c* current_set = m_set[set_address];
+  int evict_idx = current_set->evict();
+  cache_entry_c* evict_entry = &current_set->m_entry[evict_idx];
+
+  if (!evict_entry->m_valid) {
+    // Nothing valid to evict
+    return static_cast<addr_t>(-1);
+  }
+
+  addr_t evict_tag = evict_entry->m_tag;
+  addr_t evict_addr = (evict_tag * m_num_sets + set_address) * m_line_size;
+
+  return evict_addr;
+}
+
+///////////////////////////////////////
 
 
 /**

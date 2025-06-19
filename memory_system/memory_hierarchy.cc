@@ -63,6 +63,8 @@ void memory_hierarchy_c::init(config_c& config) {
   // instantiate caches and main memory (e.g., DRAM)
   m_dram = new simple_mem_c("DRAM", MEM_MC, config.get_memory_latency());
 
+
+
   if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
     int num_sets = config.get_l1d_size() / (config.get_l1d_line_size() * config.get_l1d_assoc());
 
@@ -74,7 +76,30 @@ void memory_hierarchy_c::init(config_c& config) {
 
     m_dram->set_done_func(std::bind(&memory_hierarchy_c::push_done_req, this, std::placeholders::_1));
   }
+  ///////////////////////////////////
+  // new code for multi level cache
+  if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::MULTI_LEVEL)) {
+    int l1i_sets = config.get_l1i_size() / (config.get_l1i_line_size() * config.get_l1i_assoc());
+    int l1d_sets = config.get_l1d_size() / (config.get_l1d_line_size() * config.get_l1d_assoc());
+    int l2_sets  = config.get_l2_size()  / (config.get_l2_line_size()  * config.get_l2_assoc());
 
+    m_l1i_cache = new cache_c("L1I", 1, l1i_sets, config.get_l1i_assoc(), config.get_l1i_line_size(), config.get_l1i_latency());
+    m_l1d_cache = new cache_c("L1D", 1, l1d_sets, config.get_l1d_assoc(), config.get_l1d_line_size(), config.get_l1d_latency());
+    m_l2_cache  = new cache_c("L2", 2, l2_sets, config.get_l2_assoc(), config.get_l2_line_size(), config.get_l2_latency());
+
+    m_l1i_cache->configure_neighbors(nullptr, nullptr, m_l2_cache, nullptr);
+    m_l1d_cache->configure_neighbors(nullptr, nullptr, m_l2_cache, nullptr);
+    m_l2_cache->configure_neighbors(m_l1i_cache, m_l1d_cache, nullptr, m_dram);
+    m_dram->configure_neighbors(m_l2_cache);
+
+    m_l1i_cache->set_mm(this);
+    m_l1d_cache->set_mm(this);
+    m_l2_cache->set_mm(this);
+    m_dram->set_done_func(std::bind(&memory_hierarchy_c::push_done_req, this, std::placeholders::_1));
+  }
+  // new code for multi level cache
+  ///////////////////////////////////
+  
   if (config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
     m_dram->configure_neighbors(nullptr);
   }
@@ -100,7 +125,17 @@ bool memory_hierarchy_c::access(addr_t address, int access_type) {
     m_l1u_cache->access(req);
   } else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
     m_dram->access(req);
+  } 
+  // new code for multi level
+  else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::MULTI_LEVEL)) {
+    if (access_type == REQ_IFETCH) {
+      m_l1i_cache->access(req);
+    } else {
+      m_l1d_cache->access(req);
+    }
   }
+
+  // new code for multi level
 
   return true;
   ////////////////////////////////////////////////////////////////////
@@ -150,6 +185,13 @@ void memory_hierarchy_c::run_a_cycle() {
   if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::SINGLE_LEVEL)) {
     m_l1u_cache->run_a_cycle();
   }
+  // new code for multi-level
+  else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::MULTI_LEVEL)) {
+    m_l1i_cache->run_a_cycle();
+    m_l1d_cache->run_a_cycle();
+    m_l2_cache->run_a_cycle();
+  }
+  // new code for multi level
 
   ////////////////////////////////////////////////////////////////////
  
@@ -203,8 +245,16 @@ bool memory_hierarchy_c::is_wb_done() {
     return m_dram->m_in_flight_wb_queue->empty() &&
            m_l1u_cache->m_in_flight_wb_queue->empty();
   }
+  // new code for multi level
+  else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::MULTI_LEVEL)) {
+    return m_dram->m_in_flight_wb_queue->empty() &&
+           m_l1i_cache->m_in_flight_wb_queue->empty() &&
+           m_l1d_cache->m_in_flight_wb_queue->empty() &&
+           m_l2_cache->m_in_flight_wb_queue->empty();
+  }
+  // new code for multi level
 
-  if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
+  else if (m_config.get_mem_hierarchy() == static_cast<int>(Hierarchy::DRAM_ONLY)) {
     return m_dram->m_in_flight_wb_queue->empty();
   }
 

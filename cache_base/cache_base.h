@@ -60,6 +60,16 @@ public:
   void print_stats();
   void dump_tag_store(bool is_file);  // false: dump to stdout, true: dump to a file
 
+  /////////////////////////////////////////
+  // added for backinval logic!!
+  bool has_line(addr_t address);
+  bool erase_line(addr_t address);
+  bool is_dirty(addr_t address);
+  addr_t get_evict_addr(addr_t address);
+
+  /////////////////////////////////////////
+
+
 private:
   std::string m_name;     // cache name
   int m_num_sets;         // number of sets
