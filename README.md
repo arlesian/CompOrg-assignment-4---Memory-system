@@ -1,3 +1,7 @@
+> **Notice**  
+> This repository contains coursework originally developed for an undergraduate computer architecture class.  
+> With the instructor’s permission, it is made public **for a limited period** solely for evaluation and application purposes, and will be set back to private afterward.
+
 # [Lab 4] Memory System Simulation
 
 ## Introduction
